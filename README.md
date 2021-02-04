@@ -1,5 +1,5 @@
 # jenkins_exporter
-Prometheus exporter for Jenkin's metrics plugin
+Prometheus exporter for Jenkins' metrics plugin
 
 Initial POC for a replacement for the [Jenkins Prometheus Metrics Plugin](https://plugins.jenkins.io/prometheus/). Since this plugin currently has some memory leaking problems.
 
