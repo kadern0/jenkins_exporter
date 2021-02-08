@@ -31,18 +31,36 @@ class JenkinsCollector():
     def get_histograms(self, metrics_object):
         metrics_list = []
         for metric_entry in metrics_object.keys():
-            name = re.sub(r'(\.|-)', '_', metric_entry).lower()
+            def_labels = ["quantile"]
+            extra_labels = []
+            extra_labels_value = []
+            if metric_entry.startswith('jenkins.node') and metric_entry.endswith('builds'):
+                name = "jenkins_node_builds"
+                extra_labels += ['node']
+                extra_labels_value = [metric_entry[13:-7]]
+                def_labels += extra_labels
+            else:
+                name = re.sub(r'(\.|-|\(|\))', '_', metric_entry).lower()
             # count
-            metrics_list.append(CounterMetricFamily(name + '_count',
-                                                    f'metric import from {metric_entry}',
-                                                    metrics_object.get(metric_entry).get('count')))
-            metric = GaugeMetricFamily(name, '', labels=["quantile"])
-            metric.add_metric(["0.5"], metrics_object.get(metric_entry).get('p50'))
-            metric.add_metric(["0.75"], metrics_object.get(metric_entry).get('p75'))
-            metric.add_metric(["0.95"], metrics_object.get(metric_entry).get('p95'))
-            metric.add_metric(["0.98"], metrics_object.get(metric_entry).get('p98'))
-            metric.add_metric(["0.99"], metrics_object.get(metric_entry).get('p99'))
-            metric.add_metric(["0.999"], metrics_object.get(metric_entry).get('p999'))
+            counter_metric = CounterMetricFamily(name,
+                                                 f'metric import from {metric_entry}',
+                                                 labels=extra_labels)
+            counter_metric.add_metric(extra_labels_value,
+                                      metrics_object.get(metric_entry).get('count'))
+            metrics_list.append(counter_metric)
+            metric = GaugeMetricFamily(name, '', labels=def_labels)
+            metric.add_metric(["0.5"] + extra_labels_value,
+                              metrics_object.get(metric_entry).get('p50'))
+            metric.add_metric(["0.75"] + extra_labels_value,
+                              metrics_object.get(metric_entry).get('p75'))
+            metric.add_metric(["0.95"] + extra_labels_value,
+                              metrics_object.get(metric_entry).get('p95'))
+            metric.add_metric(["0.98"] + extra_labels_value,
+                              metrics_object.get(metric_entry).get('p98'))
+            metric.add_metric(["0.99"] + extra_labels_value,
+                              metrics_object.get(metric_entry).get('p99'))
+            metric.add_metric(["0.999"] + extra_labels_value,
+                              metrics_object.get(metric_entry).get('p999'))
             metrics_list.append(metric)
         return metrics_list
 
@@ -58,6 +76,7 @@ class JenkinsCollector():
             if isinstance(value, (list, str)):
                 continue
             metric_list.append(GaugeMetricFamily(name, f'metric import from {gauge}', value))
+        metric_list += self.get_histograms(result.json().get('timers'))
         metric_list += self.get_meters(result.json().get('meters'))
         metric_list += self.get_histograms(result.json().get('histograms'))
 
