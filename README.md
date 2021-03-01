@@ -1,11 +1,13 @@
 # jenkins_exporter
-Prometheus exporter for Jenkins' metrics plugin
+Prometheus exporter for Jenkins' metrics plugin as well as jobs metrics.
 
-Initial POC for a replacement for the [Jenkins Prometheus Metrics Plugin](https://plugins.jenkins.io/prometheus/). Since this plugin currently has some memory leaking problems.
+Basic metrics exporter as a replacement for the [Jenkins Prometheus Metrics Plugin](https://plugins.jenkins.io/prometheus/). Since this plugin currently has some memory leaking problems.
 
 Unlike with a plugin, if this exporter stops working it will never impact Jenkins (it doesn't even have to run in the same machine).
 
-It requires the installation of the [Metrics-plugin](https://github.com/jenkinsci/metrics-plugin) and an API with read access to the Metrics servelet, as explained [here](https://plugins.jenkins.io/metrics/).
+It requires the installation of the [Metrics-plugin](https://github.com/jenkinsci/metrics-plugin) and an API with read access to the Metrics servelet, as explained [here](https://plugins.jenkins.io/metrics/). Also requires an anonymous user to be able to read job information. I've used the [Role-based Authorization Strategy plug-in](https://plugins.jenkins.io/role-strategy/). The only required permissions are: `Overall - Read` and `Job - Read`.
+
+The job metrics code is based on the example from [RobustPerception](https://github.com/RobustPerception/python_examples/blob/master/jenkins_exporter/jenkins_exporter.py)
 
 # Usage
 ```bash
@@ -15,6 +17,23 @@ It requires the installation of the [Metrics-plugin](https://github.com/jenkinsc
 
 Metrics will be available on the specified port. By default is set to 9118.
 ```bash
+# HELP jenkins_job_last_stable_build_timestamp_seconds Jenkins build timestamp in unixtime for lastStableBuild
+# TYPE jenkins_job_last_stable_build_timestamp_seconds gauge
+jenkins_job_last_stable_build_timestamp_seconds{jobname="job1"} 1.614497037161e+09
+jenkins_job_last_stable_build_timestamp_seconds{jobname="job2"} 1.614500169351e+09
+# HELP jenkins_job_last_successful_build Jenkins build number for lastSuccessfulBuild
+# TYPE jenkins_job_last_successful_build gauge
+jenkins_job_last_successful_build{jobname="job1"} 1.0
+jenkins_job_last_successful_build{jobname="job2"} 17.0
+# HELP jenkins_job_last_successful_build_duration_seconds Jenkins build duration in seconds for lastSuccessfulBuild
+# TYPE jenkins_job_last_successful_build_duration_seconds gauge
+jenkins_job_last_successful_build_duration_seconds{jobname="job1"} 5.622
+jenkins_job_last_successful_build_duration_seconds{jobname="job2"} 1.605
+# HELP jenkins_job_last_successful_build_timestamp_seconds Jenkins build timestamp in unixtime for lastSuccessfulBuild
+# TYPE jenkins_job_last_successful_build_timestamp_seconds gauge
+jenkins_job_last_successful_build_timestamp_seconds{jobname="job1"} 1.614497037161e+09
+jenkins_job_last_successful_build_timestamp_seconds{jobname="job2"} 1.614500169351e+09
+...
 # HELP process_start_time_seconds Start time of the process since unix epoch in seconds.
 # TYPE process_start_time_seconds gauge
 process_start_time_seconds 1.61247413886e+09

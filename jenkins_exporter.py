@@ -1,19 +1,72 @@
-#!/usr/bin/python
+#!/usr/bin/env python3
 
 import argparse
+import json
 import re
 import time
-import requests
+import urllib.error
+
 from prometheus_client import start_http_server
-from prometheus_client.core import GaugeMetricFamily, CounterMetricFamily, REGISTRY
+from prometheus_client.core import (
+    GaugeMetricFamily, CounterMetricFamily, REGISTRY
+)
+from urllib.request import urlopen
 
 
 class JenkinsCollector():
-    jenkins_url = ""
-    api_key = ""
-    def __init__(self, jenkins_url, api_key):
-        self.jenkins_url = jenkins_url
+
+    def __init__(self, target, api_key):
+        self._target = target.rstrip("/")
         self.api_key = api_key
+
+    def get_job_metrics(self):
+
+        # The build statuses we want to export about.
+        statuses = ["lastBuild", "lastCompletedBuild", "lastFailedBuild",
+                    "lastStableBuild", "lastSuccessfulBuild",
+                    "lastUnstableBuild", "lastUnsuccessfulBuild"]
+
+        # The metrics we want to export.
+        metrics = {}
+        for s in statuses:
+            snake_case = re.sub('([A-Z])', '_\\1', s).lower()
+            metrics[s] = {
+                'number':
+                GaugeMetricFamily('jenkins_job_{0}'.format(snake_case),
+                                  'Jenkins build number for {0}'.format(s),
+                                  labels=["jobname"]),
+                'duration':
+                GaugeMetricFamily('jenkins_job_{0}_duration_seconds'.format(snake_case),
+                                  'Jenkins build duration in seconds for {0}'.format(s), labels=["jobname"]),
+                'timestamp':
+                GaugeMetricFamily('jenkins_job_{0}_timestamp_seconds'.format(snake_case),
+                                  'Jenkins build timestamp in unixtime for {0}'.format(s), labels=["jobname"]),
+            }
+
+        # Request exactly the information we need from Jenkins
+        try:
+            result = json.loads(urlopen(
+                "{0}/api/json?tree=jobs[name,{1}]".format(
+                    self._target, ",".join([s + "[number,timestamp,duration]" for s in statuses])))
+                                .read().decode("utf-8"))
+        except urllib.error.URLError as e:
+            print(e.__dict__)
+            return ""
+
+        for job in result['jobs']:
+            name = job['name']
+            for s in statuses:
+                if s in job and job[s]:
+                    status = job[s]
+                else:
+                    status = {}
+                metrics[s]['number'].add_metric([name], status.get('number', 0))
+                metrics[s]['duration'].add_metric([name], status.get('duration', 0) / 1000.0)
+                metrics[s]['timestamp'].add_metric([name], status.get('timestamp', 0) / 1000.0)
+
+        for s in statuses:
+            for m in metrics[s].values():
+                yield m
 
     def get_meters(self, metrics_object):
         metrics_list = []
@@ -28,6 +81,7 @@ class JenkinsCollector():
                     name, f'metric import from {metric_entry}',
                     metrics_object.get(metric_entry).get('count')))
         return metrics_list
+
     def get_histograms(self, metrics_object):
         metrics_list = []
         for metric_entry in metrics_object.keys():
@@ -64,24 +118,36 @@ class JenkinsCollector():
             metrics_list.append(metric)
         return metrics_list
 
+    def get_gauges(self, metrics_object):
+        metrics_list = []
+        for gauge in metrics_object:
+            name = re.sub(r'(\.|-)', '_', gauge).lower()
+            value = metrics_object.get(gauge).get('value')
+            if not isinstance(value, (list, str)):
+                metrics_list.append(GaugeMetricFamily(name, f'metric import from {gauge}', value))
+        return metrics_list
+
     def collect(self):
-        result = requests.get(self.jenkins_url + "/metrics/" + self.api_key + "/metrics/")
-        result_gauges = result.json().get('gauges')
+
+        try:
+            result = json.loads(urlopen(
+                "{0}/metrics/{1}/metrics/".format(
+                    self._target, self.api_key))
+                                .read().decode("utf-8"))
+        except urllib.error.URLError as e:
+            print(e.__dict__)
+            return ""
 
         metric_list = []
-        for gauge in result_gauges:
-#            print(f"new metric found {gauge} with value {result_gauges.get(gauge).get('value')}")
-            name = re.sub(r'(\.|-)', '_', gauge).lower()
-            value = result_gauges.get(gauge).get('value')
-            if isinstance(value, (list, str)):
-                continue
-            metric_list.append(GaugeMetricFamily(name, f'metric import from {gauge}', value))
-        metric_list += self.get_histograms(result.json().get('timers'))
-        metric_list += self.get_meters(result.json().get('meters'))
-        metric_list += self.get_histograms(result.json().get('histograms'))
+        metric_list += self.get_job_metrics()
+        metric_list += self.get_gauges(result.get('gauges'))
+        metric_list += self.get_histograms(result.get('timers'))
+        metric_list += self.get_meters(result.get('meters'))
+        metric_list += self.get_histograms(result.get('histograms'))
 
         for metric in metric_list:
             yield metric
+
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
