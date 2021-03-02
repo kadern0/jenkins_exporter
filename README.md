@@ -9,6 +9,7 @@ It requires the installation of the [Metrics-plugin](https://github.com/jenkinsc
 
 The job metrics code is based on the example from [RobustPerception](https://github.com/RobustPerception/python_examples/blob/master/jenkins_exporter/jenkins_exporter.py)
 
+It also exposes metrics from all stages on Pipeline jobs.
 # Usage
 ```bash
 ./jenkins_exporter.py --jenkins-url https://my.jenkins.com --api-key XXXXXXX
