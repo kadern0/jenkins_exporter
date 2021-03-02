@@ -6,20 +6,46 @@ import re
 import time
 import urllib.error
 
+from urllib.request import urlopen
 from prometheus_client import start_http_server
 from prometheus_client.core import (
     GaugeMetricFamily, CounterMetricFamily, REGISTRY
 )
-from urllib.request import urlopen
 
 
 class JenkinsCollector():
-
+    """Jenkins metrics collector"""
     def __init__(self, target, api_key):
         self._target = target.rstrip("/")
         self.api_key = api_key
 
+
+    def get_pipeline_metrics(self, job, build_no):
+        """Returns duration and status from all stages on pipeline jobs"""
+
+        try:
+            result = json.loads(urlopen(
+                "{0}/job/{1}/{2}/wfapi/describe".format(
+                    self._target, job, build_no))
+                                .read().decode("utf-8"))
+        except urllib.error.URLError as e:
+            print(e.__dict__)
+            return []
+        metric = GaugeMetricFamily(
+            'jenkins_job_{0}_stages_duration'.format(job),
+            'Jenkins duration in seconds for each stage of the job {0}'.format(job),
+            labels=['jobname', 'stage', 'status']
+        )
+        for stage in result.get('stages'):
+            metric.add_metric([job, stage.get('name', ''),
+                               stage.get('status', '')],
+                              stage.get('durationMillis', 0) / 1000.0)
+
+        return metric
+
+
     def get_job_metrics(self):
+        """Returns metrics from jobs"""
 
         # The build statuses we want to export about.
         statuses = ["lastBuild", "lastCompletedBuild", "lastFailedBuild",
@@ -51,7 +77,7 @@ class JenkinsCollector():
                                 .read().decode("utf-8"))
         except urllib.error.URLError as e:
             print(e.__dict__)
-            return ""
+            yield []
 
         for job in result['jobs']:
             name = job['name']
@@ -60,15 +86,19 @@ class JenkinsCollector():
                     status = job[s]
                 else:
                     status = {}
-                metrics[s]['number'].add_metric([name], status.get('number', 0))
+                build_number = status.get('number', 0)
+                metrics[s]['number'].add_metric([name], build_number)
                 metrics[s]['duration'].add_metric([name], status.get('duration', 0) / 1000.0)
                 metrics[s]['timestamp'].add_metric([name], status.get('timestamp', 0) / 1000.0)
+                if (build_number != 0) and (s == "lastBuild"):
+                    metrics[s]['stages'] = self.get_pipeline_metrics(name, build_number)
 
         for s in statuses:
             for m in metrics[s].values():
                 yield m
 
     def get_meters(self, metrics_object):
+        """Returns metrics list from meters"""
         metrics_list = []
         metric = CounterMetricFamily('http_response_codes_count', '', labels=["response_code"])
         for metric_entry in metrics_object.keys():
@@ -83,6 +113,7 @@ class JenkinsCollector():
         return metrics_list
 
     def get_histograms(self, metrics_object):
+        """Returns metrics list from histograms"""
         metrics_list = []
         for metric_entry in metrics_object.keys():
             def_labels = ["quantile"]
@@ -119,6 +150,7 @@ class JenkinsCollector():
         return metrics_list
 
     def get_gauges(self, metrics_object):
+        """Returns metrics list from gauges"""
         metrics_list = []
         for gauge in metrics_object:
             name = re.sub(r'(\.|-)', '_', gauge).lower()
@@ -128,7 +160,7 @@ class JenkinsCollector():
         return metrics_list
 
     def collect(self):
-
+        """Main collecting function"""
         try:
             result = json.loads(urlopen(
                 "{0}/metrics/{1}/metrics/".format(
@@ -136,7 +168,7 @@ class JenkinsCollector():
                                 .read().decode("utf-8"))
         except urllib.error.URLError as e:
             print(e.__dict__)
-            return ""
+            yield []
 
         metric_list = []
         metric_list += self.get_job_metrics()
@@ -153,7 +185,7 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument('--api-key', required=True, help="Api key with metrics access")
     parser.add_argument('--jenkins-url', required=True, help="Jenkins server URL")
-    parser.add_argument('--port', help="Jenkins server URL", default=9118)
+    parser.add_argument('--port', type=int, help="Jenkins server URL", default=9118)
     args = parser.parse_args()
     REGISTRY.register(JenkinsCollector(args.jenkins_url, args.api_key))
     print(f"Starting server on port: {args.port}")
