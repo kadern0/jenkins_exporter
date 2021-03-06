@@ -22,7 +22,8 @@ class JenkinsCollector():
 
     def get_pipeline_metrics(self, job, build_no):
         """Returns duration and status from all stages on pipeline jobs"""
-
+        snake_case = re.sub(r'(\.|-|\(|\))', '_', job).lower()
+#        snake_case = re.sub('([A-Z])', '_\\1', job).lower()
         try:
             result = json.loads(urlopen(
                 "{0}/job/{1}/{2}/wfapi/describe".format(
@@ -32,7 +33,7 @@ class JenkinsCollector():
             print(e.__dict__)
             return []
         metric = GaugeMetricFamily(
-            'jenkins_job_{0}_stages_duration'.format(job),
+            'jenkins_job_{0}_stages_duration'.format(snake_case),
             'Jenkins duration in seconds for each stage of the job {0}'.format(job),
             labels=['jobname', 'stage', 'status']
         )
@@ -69,7 +70,7 @@ class JenkinsCollector():
                                   'Jenkins build timestamp in unixtime for {0}'.format(s), labels=["jobname"]),
             }
 
-        # Request exactly the information we need from Jenkins
+        # Request exactly information we need from Jenkins
         try:
             result = json.loads(urlopen(
                 "{0}/api/json?tree=jobs[name,{1}]".format(
@@ -89,9 +90,9 @@ class JenkinsCollector():
                 build_number = status.get('number', 0)
                 metrics[s]['number'].add_metric([name], build_number)
                 metrics[s]['duration'].add_metric([name], status.get('duration', 0) / 1000.0)
-                metrics[s]['timestamp'].add_metric([name], status.get('timestamp', 0) / 1000.0)
-                if (build_number != 0) and (s == "lastBuild"):
-                    metrics[s]['stages'] = self.get_pipeline_metrics(name, build_number)
+  #              metrics[s]['timestamp'].add_metric([name], status.get('timestamp', 0) / 1000.0)
+                if (build_number != 0) and (s == "lastBuild") and job['_class'] == "org.jenkinsci.plugins.workflow.job.WorkflowJob":
+                    metrics[s][name+'_stages'] = self.get_pipeline_metrics(name, build_number)
 
         for s in statuses:
             for m in metrics[s].values():
@@ -112,42 +113,38 @@ class JenkinsCollector():
                     metrics_object.get(metric_entry).get('count')))
         return metrics_list
 
-    def get_histograms(self, metrics_object):
-        """Returns metrics list from histograms"""
+
+    def get_timers(self, metrics_object):
+        """Returns metrics from histograms and timers"""
         metrics_list = []
+        keys_to_ignore = ['values', 'duration_units', 'rate_units', 'stddev']
         for metric_entry in metrics_object.keys():
-            def_labels = ["quantile"]
-            extra_labels = []
-            extra_labels_value = []
-            if metric_entry.startswith('jenkins.node') and metric_entry.endswith('builds'):
-                name = "jenkins_node_builds"
-                extra_labels += ['node']
-                extra_labels_value = [metric_entry[13:-7]]
-                def_labels += extra_labels
-            else:
-                name = re.sub(r'(\.|-|\(|\))', '_', metric_entry).lower()
-            # count
-            counter_metric = CounterMetricFamily(name,
-                                                 f'metric import from {metric_entry}',
-                                                 labels=extra_labels)
-            counter_metric.add_metric(extra_labels_value,
-                                      metrics_object.get(metric_entry).get('count'))
-            metrics_list.append(counter_metric)
-            metric = GaugeMetricFamily(name, '', labels=def_labels)
-            metric.add_metric(["0.5"] + extra_labels_value,
-                              metrics_object.get(metric_entry).get('p50'))
-            metric.add_metric(["0.75"] + extra_labels_value,
-                              metrics_object.get(metric_entry).get('p75'))
-            metric.add_metric(["0.95"] + extra_labels_value,
-                              metrics_object.get(metric_entry).get('p95'))
-            metric.add_metric(["0.98"] + extra_labels_value,
-                              metrics_object.get(metric_entry).get('p98'))
-            metric.add_metric(["0.99"] + extra_labels_value,
-                              metrics_object.get(metric_entry).get('p99'))
-            metric.add_metric(["0.999"] + extra_labels_value,
-                              metrics_object.get(metric_entry).get('p999'))
-            metrics_list.append(metric)
+            for entry in metrics_object.get(metric_entry).keys():
+                if entry in keys_to_ignore:
+                    continue
+                extra_labels = []
+                extra_labels_value = []
+                if metric_entry.startswith('jenkins.node') and metric_entry.endswith('builds'):
+                    name = "jenkins_node_builds"
+                    extra_labels += ['node']
+                    extra_labels_value = [metric_entry[13:-7]]
+                else:
+                    name = re.sub(r'(\.|-|\(|\))', '_', metric_entry).lower()
+                if entry in ('p50', 'p75', 'p95', 'p98', 'p99', 'p999'):
+                    extra_labels += ['quantile']
+                    extra_labels_value += [entry.replace('p', '0.')]
+                else:
+                    name += f'_{entry}'
+                if extra_labels:
+                    metric = GaugeMetricFamily(name, f'metric import from {metric_entry}', labels=extra_labels)
+                    metric.add_metric(extra_labels_value, metrics_object.get(metric_entry).get(entry))
+                else:
+                    metric = GaugeMetricFamily(name, f'metric import from {metric_entry}')
+                    metric.add_metric('', metrics_object.get(metric_entry).get(entry))
+                metrics_list.append(metric)
+
         return metrics_list
+
 
     def get_gauges(self, metrics_object):
         """Returns metrics list from gauges"""
@@ -173,9 +170,9 @@ class JenkinsCollector():
         metric_list = []
         metric_list += self.get_job_metrics()
         metric_list += self.get_gauges(result.get('gauges'))
-        metric_list += self.get_histograms(result.get('timers'))
+        metric_list += self.get_timers(result.get('timers'))
         metric_list += self.get_meters(result.get('meters'))
-        metric_list += self.get_histograms(result.get('histograms'))
+        metric_list += self.get_timers(result.get('histograms'))
 
         for metric in metric_list:
             yield metric
@@ -191,4 +188,4 @@ if __name__ == "__main__":
     print(f"Starting server on port: {args.port}")
     start_http_server(args.port)
     while True:
-        time.sleep(15)
+        time.sleep(30)
