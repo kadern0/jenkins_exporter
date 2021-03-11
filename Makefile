@@ -19,3 +19,9 @@ docker:
 	@echo " "
 
 	docker build -t ${DOCKER_IMAGE}:latest .
+
+tests: venv
+	@echo "Running Tests..."
+
+	# Activate venv and install dependencies and run tests
+	. ${VENV_DIR}/bin/activate && pip install -r requirements-tests.txt && python -m unittest tests.py
