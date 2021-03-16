@@ -9,7 +9,7 @@ from jenkins_exporter import JenkinsCollector
 class JenkinsCollectorTests(unittest.TestCase):
     def setUp(self):
         self._fake_jenkins = JenkinsCollector(
-            target="http://fake-jenkins.com", api_key="fake_key")
+            target="http://fake-jenkins.com", api_key="fake_key", user="", passwd="")
 
         self._fake_metrics = {'fake_metric': {'count': '1'}}
         self._fake_histograms = {'fake_histogram': {'count': '1'}}
