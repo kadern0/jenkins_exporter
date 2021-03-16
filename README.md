@@ -11,8 +11,16 @@ The job metrics code is based on the example from [RobustPerception](https://git
 
 It also exposes metrics from all stages on Pipeline jobs.
 # Usage
+Directly:
 ```bash
 ./jenkins_exporter.py --jenkins-url https://my.jenkins.com --api-key XXXXXXX
+```
+In Docker:
+```
+# Build docker image
+make docker
+# Run the container
+docker run -d jenkins_exporter:latest --jenkins-url https://URL:PORT --api-key 'API_KEY' --port 9117 --user user --passwd passwd
 ```
 # Metrics
 
