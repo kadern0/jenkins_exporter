@@ -12,15 +12,15 @@ class JenkinsCollectorTests(unittest.TestCase):
             target="http://fake-jenkins.com", api_key="fake_key", user="", passwd="")
 
         self._fake_metrics = {'fake_metric': {'count': '1'}}
-        self._fake_histograms = {'fake_histogram': {'count': '1'}}
+        self._fake_timers = {'fake_timer': {'count': '1'}}
 
     def test_get_meters(self):
-        """Test: get_histograms"""
+        """Test: get_meters"""
         fake_metric_list = self._fake_jenkins.get_meters(self._fake_metrics)
         self.assertIsInstance(fake_metric_list[0], CounterMetricFamily)
 
-    def test_get_histograms(self):
-        """Test: get_histograms"""
-        fake_metric_list = self._fake_jenkins.get_histograms(
-            self._fake_histograms)
-        self.assertIsInstance(fake_metric_list[1], GaugeMetricFamily)
+    def test_get_timers(self):
+        """Test: get_timers"""
+        fake_metric_list = self._fake_jenkins.get_timers(
+            self._fake_timers)
+        self.assertIsInstance(fake_metric_list[0], GaugeMetricFamily)
