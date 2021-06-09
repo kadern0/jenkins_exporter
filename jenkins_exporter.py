@@ -209,7 +209,17 @@ if __name__ == "__main__":
     parser.add_argument('--passwd', required=False,
                         help="Password/token for jenkins user", default='')
     args = parser.parse_args()
-    REGISTRY.register(JenkinsCollector(args.jenkins_url, args.api_key, args.user, args.passwd))
+    while True:
+        try:
+            REGISTRY.register(JenkinsCollector(args.jenkins_url, args.api_key,
+                                               args.user, args.passwd))
+        except:
+            logging.error('Some error occurred connecting to Jenkins, please review the configuration.')
+            logging.info('Sleeping for 300 seconds before retrying...')
+            time.sleep(3000)
+        else:
+            break
+
     logging.info("Starting server on port: %d", args.port)
     start_http_server(args.port)
     while True:
